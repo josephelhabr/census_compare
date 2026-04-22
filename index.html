@@ -1,0 +1,1631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Census Compare — Demographics Side-by-Side</title>
+
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<!-- React UMD (plain script tags — no ES modules, no Babel) -->
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #fafaf9; }
+  body { font-family: "Söhne", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .serif { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .hairline { border-color: #d6d3d1; }
+  .hairline-strong { border-color: #1c1917; }
+  .lift { transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .lift:hover { transform: translateY(-1px); }
+  .fadein { animation: fadein 320ms ease-out; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .pop-in { animation: pop-in 900ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  @keyframes pop-in {
+    0%   { opacity: 0; transform: translateY(18px) scale(0.97); }
+    65%  { transform: translateY(-3px) scale(1.008); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .bar-grow { transition: width 600ms cubic-bezier(0.4, 0, 0.2, 1); }
+  .spinner-spin { animation: spin 700ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Sticky first column */
+  .sticky-col { position: sticky; left: 0; background: white; z-index: 1; }
+  tr:hover .sticky-col { background: #fafaf9; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script>
+(function() {
+'use strict';
+
+const e = React.createElement;
+const { useState, useMemo, useEffect, useRef, Fragment } = React;
+
+// ============================================================================
+// INLINE SVG ICONS
+// ============================================================================
+
+function Icon(name, props) {
+  const size = (props && props.size) || 16;
+  const stroke = (props && props.strokeWidth) || 1.75;
+  const className = (props && props.className) || '';
+  const style = (props && props.style) || {};
+  const common = {
+    width: size, height: size, viewBox: '0 0 24 24',
+    fill: 'none', stroke: 'currentColor', strokeWidth: stroke,
+    strokeLinecap: 'round', strokeLinejoin: 'round',
+    className, style,
+  };
+  const paths = ICONS[name] || [];
+  return e('svg', common, ...paths.map((p, i) => e('path', Object.assign({ key: i }, p))));
+}
+
+const ICONS = {
+  check: [{ d: 'M20 6 9 17l-5-5' }],
+  x: [{ d: 'M18 6 6 18' }, { d: 'm6 6 12 12' }],
+  plus: [{ d: 'M12 5v14' }, { d: 'M5 12h14' }],
+  chevronRight: [{ d: 'm9 18 6-6-6-6' }],
+  chevronLeft: [{ d: 'm15 18-6-6 6-6' }],
+  arrowRight: [{ d: 'M5 12h14' }, { d: 'm12 5 7 7-7 7' }],
+  calendar: [{ d: 'M8 2v4' }, { d: 'M16 2v4' }, { d: 'M3 10h18' }, { d: 'M21 6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z' }],
+  eye: [{ d: 'M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z' }, { d: 'M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' }],
+  alert: [{ d: 'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }, { d: 'M12 9v4' }, { d: 'M12 17h.01' }],
+  info: [{ d: 'M12 12v-2' }, { d: 'M12 8h.01' }, { d: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z' }],
+  loader: [{ d: 'M21 12a9 9 0 1 1-6.219-8.56' }],
+  search: [{ d: 'm21 21-4.35-4.35' }, { d: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z' }],
+  download: [{ d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }, { d: 'M7 10l5 5 5-5' }, { d: 'M12 15V3' }],
+  users: [{ d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2' }, { d: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' }, { d: 'M22 21v-2a4 4 0 0 0-3-3.87' }, { d: 'M16 3.13a4 4 0 0 1 0 7.75' }],
+  home: [{ d: 'm3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }, { d: 'M9 22V12h6v10' }],
+  briefcase: [{ d: 'M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16' }, { d: 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z' }],
+  userCheck: [{ d: 'M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2' }, { d: 'M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' }, { d: 'm17 11 2 2 4-4' }],
+  building: [{ d: 'M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z' }, { d: 'M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2' }, { d: 'M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2' }, { d: 'M10 6h4' }, { d: 'M10 10h4' }, { d: 'M10 14h4' }, { d: 'M10 18h4' }],
+  key: [{ d: 'm21 2-9.6 9.6' }, { d: 'M15.5 7.5 19 11' }, { d: 'M7.5 15.5a5 5 0 1 1 0-7 5 5 0 0 1 0 7z' }],
+  rotate: [{ d: 'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8' }, { d: 'M3 3v5h5' }],
+  trendUp: [{ d: 'm22 7-8.5 8.5-5-5L2 17' }, { d: 'M16 7h6v6' }],
+  trendDown: [{ d: 'm22 17-8.5-8.5-5 5L2 7' }, { d: 'M16 17h6v-6' }],
+  minus: [{ d: 'M5 12h14' }],
+  barChart: [{ d: 'M3 3v18h18' }, { d: 'M7 16V10' }, { d: 'M11 16V6' }, { d: 'M15 16v-8' }, { d: 'M19 16v-4' }],
+  arrows: [{ d: 'm8 3 4 4-4 4' }, { d: 'M4 7h16' }, { d: 'm16 21-4-4 4-4' }, { d: 'M20 17H4' }],
+  clock: [{ d: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z' }, { d: 'M12 7v5l3 3' }],
+  mapPin: [{ d: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z' }, { d: 'M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' }],
+  sparkles: [{ d: 'm12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z' }, { d: 'M5 3v4' }, { d: 'M19 17v4' }, { d: 'M3 5h4' }, { d: 'M17 19h4' }],
+};
+
+// ============================================================================
+// CONFIG
+// ============================================================================
+
+const MAX_GEOGRAPHIES = 5;
+
+const GEO_COLORS = [
+  { name: 'navy',    bg: '#1e40af', bgLight: '#eff6ff', border: '#1e40af' },
+  { name: 'rust',    bg: '#b45309', bgLight: '#fef3c7', border: '#b45309' },
+  { name: 'teal',    bg: '#0f766e', bgLight: '#ccfbf1', border: '#0f766e' },
+  { name: 'plum',    bg: '#86198f', bgLight: '#fae8ff', border: '#86198f' },
+  { name: 'forest',  bg: '#166534', bgLight: '#dcfce7', border: '#166534' },
+];
+
+const COMPARISON_MODES = {
+  'single_over_time': {
+    label: 'One place, over time',
+    description: 'Track how a single county or state has changed across two years.',
+    icon: 'clock', multiGeo: false, multiYear: true,
+  },
+  'multi_same_year': {
+    label: 'Multiple places, same year',
+    description: 'Compare demographics across 2-5 counties or states in a single year.',
+    icon: 'arrows', multiGeo: true, multiYear: false,
+  },
+  'multi_over_time': {
+    label: 'Multiple places, over time',
+    description: 'Compare 2-5 places across two years. Each place gets earlier and later values.',
+    icon: 'barChart', multiGeo: true, multiYear: true,
+  },
+};
+
+const UNIVERSES = {
+  population:    { label: 'Population',    icon: 'users',     description: 'Per-person characteristics.', denominator: 'Total persons' },
+  households:    { label: 'Households',    icon: 'home',      description: 'Occupied housing units.', denominator: 'Total households' },
+  families:      { label: 'Families',      icon: 'userCheck', description: 'Households with two or more related people.', denominator: 'Family households' },
+  housing_units: { label: 'Housing Units', icon: 'building',  description: 'All housing units (occupied + vacant).', denominator: 'Total housing units' },
+  workers:       { label: 'Workers',       icon: 'briefcase', description: 'Employed persons aged 16+.', denominator: 'Workers 16+' },
+};
+
+const INDICATORS = {
+  population: [
+    { id: 'total_pop',        label: 'Total population',              varCode: 'B01003_001E', format: 'count'   },
+    { id: 'median_age',       label: 'Median age',                    varCode: 'B01002_001E', format: 'years'   },
+    { id: 'pct_under_18',     label: 'Population under 18',           varCode: 'B09001_001E', format: 'pct_of', denomVar: 'B01003_001E' },
+    { id: 'pct_white',        label: 'White alone, non-Hispanic',     varCode: 'B03002_003E', format: 'pct_of', denomVar: 'B03002_001E' },
+    { id: 'pct_black',        label: 'Black or African American alone',varCode: 'B03002_004E', format: 'pct_of', denomVar: 'B03002_001E' },
+    { id: 'pct_asian',        label: 'Asian alone',                   varCode: 'B03002_006E', format: 'pct_of', denomVar: 'B03002_001E' },
+    { id: 'pct_hispanic',     label: 'Hispanic or Latino (any race)', varCode: 'B03002_012E', format: 'pct_of', denomVar: 'B03002_001E' },
+    { id: 'pct_foreign_born', label: 'Foreign-born population',       varCode: 'B05002_013E', format: 'pct_of', denomVar: 'B05002_001E' },
+    { id: 'pct_bachelors',    label: "Bachelor's degree or higher (25+)", format: 'pct_computed', numerators: ['B15003_022E','B15003_023E','B15003_024E','B15003_025E'], denomVar: 'B15003_001E' },
+    { id: 'pct_poverty',      label: 'Population in poverty',         varCode: 'B17001_002E', format: 'pct_of', denomVar: 'B17001_001E' },
+  ],
+  households: [
+    { id: 'total_hh',          label: 'Total households',             varCode: 'B11001_001E', format: 'count'   },
+    { id: 'median_hh_income',  label: 'Median household income',      varCode: 'B19013_001E', format: 'dollars' },
+    { id: 'pct_family_hh',     label: 'Family households',            varCode: 'B11001_002E', format: 'pct_of', denomVar: 'B11001_001E' },
+    { id: 'pct_nonfamily_hh',  label: 'Non-family households',        varCode: 'B11001_007E', format: 'pct_of', denomVar: 'B11001_001E' },
+    { id: 'pct_living_alone',  label: 'Householders living alone',    varCode: 'B11001_008E', format: 'pct_of', denomVar: 'B11001_001E' },
+    { id: 'pct_hh_under_35k',  label: 'Households earning under $35k',format: 'pct_computed', numerators: ['B19001_002E','B19001_003E','B19001_004E','B19001_005E','B19001_006E','B19001_007E'], denomVar: 'B19001_001E' },
+    { id: 'pct_hh_over_100k',  label: 'Households earning $100k+',    format: 'pct_computed', numerators: ['B19001_013E','B19001_014E','B19001_015E','B19001_016E','B19001_017E'], denomVar: 'B19001_001E' },
+  ],
+  families: [
+    { id: 'median_fam_income',  label: 'Median family income',        varCode: 'B19113_001E', format: 'dollars' },
+    { id: 'pct_fam_poverty',    label: 'Families below poverty',      varCode: 'B17010_002E', format: 'pct_of', denomVar: 'B17010_001E' },
+    { id: 'pct_fam_w_children', label: 'Families with children under 18', varCode: 'B11003_002E', format: 'pct_of', denomVar: 'B11003_001E' },
+  ],
+  housing_units: [
+    { id: 'total_units',        label: 'Total housing units',         varCode: 'B25001_001E', format: 'count'   },
+    { id: 'pct_occupied',       label: 'Occupied housing units',      varCode: 'B25002_002E', format: 'pct_of', denomVar: 'B25002_001E' },
+    { id: 'pct_owner',          label: 'Owner-occupied units',        varCode: 'B25003_002E', format: 'pct_of', denomVar: 'B25003_001E' },
+    { id: 'pct_renter',         label: 'Renter-occupied units',       varCode: 'B25003_003E', format: 'pct_of', denomVar: 'B25003_001E' },
+    { id: 'median_home_value',  label: 'Median home value',           varCode: 'B25077_001E', format: 'dollars' },
+    { id: 'median_gross_rent',  label: 'Median gross rent',           varCode: 'B25064_001E', format: 'dollars' },
+  ],
+  workers: [
+    { id: 'total_workers',      label: 'Workers aged 16+',            varCode: 'B08301_001E', format: 'count'   },
+    { id: 'pct_drove_alone',    label: 'Drove alone to work',         varCode: 'B08301_003E', format: 'pct_of', denomVar: 'B08301_001E' },
+    { id: 'pct_carpool',        label: 'Carpooled',                   varCode: 'B08301_004E', format: 'pct_of', denomVar: 'B08301_001E' },
+    { id: 'pct_transit',        label: 'Public transit',              varCode: 'B08301_010E', format: 'pct_of', denomVar: 'B08301_001E' },
+    { id: 'pct_walked',         label: 'Walked to work',              varCode: 'B08301_019E', format: 'pct_of', denomVar: 'B08301_001E' },
+    { id: 'pct_wfh',            label: 'Worked from home',            varCode: 'B08301_021E', format: 'pct_of', denomVar: 'B08301_001E' },
+    { id: 'mean_travel_time',   label: 'Mean travel time to work',    varCode: 'B08013_001E', format: 'minutes_computed', denomVar: 'B08012_001E' },
+  ],
+};
+
+const YEARS = [2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023];
+
+const STATES = [
+  { fips: '01', name: 'Alabama' }, { fips: '02', name: 'Alaska' }, { fips: '04', name: 'Arizona' },
+  { fips: '05', name: 'Arkansas' }, { fips: '06', name: 'California' }, { fips: '08', name: 'Colorado' },
+  { fips: '09', name: 'Connecticut' }, { fips: '10', name: 'Delaware' }, { fips: '11', name: 'District of Columbia' },
+  { fips: '12', name: 'Florida' }, { fips: '13', name: 'Georgia' }, { fips: '15', name: 'Hawaii' },
+  { fips: '16', name: 'Idaho' }, { fips: '17', name: 'Illinois' }, { fips: '18', name: 'Indiana' },
+  { fips: '19', name: 'Iowa' }, { fips: '20', name: 'Kansas' }, { fips: '21', name: 'Kentucky' },
+  { fips: '22', name: 'Louisiana' }, { fips: '23', name: 'Maine' }, { fips: '24', name: 'Maryland' },
+  { fips: '25', name: 'Massachusetts' }, { fips: '26', name: 'Michigan' }, { fips: '27', name: 'Minnesota' },
+  { fips: '28', name: 'Mississippi' }, { fips: '29', name: 'Missouri' }, { fips: '30', name: 'Montana' },
+  { fips: '31', name: 'Nebraska' }, { fips: '32', name: 'Nevada' }, { fips: '33', name: 'New Hampshire' },
+  { fips: '34', name: 'New Jersey' }, { fips: '35', name: 'New Mexico' }, { fips: '36', name: 'New York' },
+  { fips: '37', name: 'North Carolina' }, { fips: '38', name: 'North Dakota' }, { fips: '39', name: 'Ohio' },
+  { fips: '40', name: 'Oklahoma' }, { fips: '41', name: 'Oregon' }, { fips: '42', name: 'Pennsylvania' },
+  { fips: '44', name: 'Rhode Island' }, { fips: '45', name: 'South Carolina' }, { fips: '46', name: 'South Dakota' },
+  { fips: '47', name: 'Tennessee' }, { fips: '48', name: 'Texas' }, { fips: '49', name: 'Utah' },
+  { fips: '50', name: 'Vermont' }, { fips: '51', name: 'Virginia' }, { fips: '53', name: 'Washington' },
+  { fips: '54', name: 'West Virginia' }, { fips: '55', name: 'Wisconsin' }, { fips: '56', name: 'Wyoming' },
+];
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function formatValue(val, format) {
+  if (val === null || val === undefined || isNaN(val) || val < 0) return '—';
+  switch (format) {
+    case 'count':
+    case 'years':
+      return val.toLocaleString(undefined, { maximumFractionDigits: val < 100 ? 1 : 0 });
+    case 'dollars':
+      return '$' + Math.round(val).toLocaleString();
+    case 'pct_of':
+    case 'pct_computed':
+      return val.toFixed(1) + '%';
+    case 'minutes_computed':
+      return val.toFixed(1) + ' min';
+    default:
+      return val.toLocaleString();
+  }
+}
+
+function computeIndicator(indicator, rawValues) {
+  if (indicator.format === 'count' || indicator.format === 'dollars' || indicator.format === 'years') {
+    const v = parseFloat(rawValues[indicator.varCode]);
+    if (isNaN(v) || v < 0) return null;
+    return v;
+  }
+  if (indicator.format === 'pct_of') {
+    const num = parseFloat(rawValues[indicator.varCode]);
+    const den = parseFloat(rawValues[indicator.denomVar]);
+    if (isNaN(num) || isNaN(den) || den <= 0 || num < 0) return null;
+    return (num / den) * 100;
+  }
+  if (indicator.format === 'pct_computed') {
+    let numSum = 0;
+    for (const n of indicator.numerators) {
+      const v = parseFloat(rawValues[n]);
+      if (isNaN(v) || v < 0) return null;
+      numSum += v;
+    }
+    const den = parseFloat(rawValues[indicator.denomVar]);
+    if (isNaN(den) || den <= 0) return null;
+    return (numSum / den) * 100;
+  }
+  if (indicator.format === 'minutes_computed') {
+    const agg = parseFloat(rawValues[indicator.varCode]);
+    const workers = parseFloat(rawValues[indicator.denomVar]);
+    if (isNaN(agg) || isNaN(workers) || workers <= 0 || agg < 0) return null;
+    return agg / workers;
+  }
+  return null;
+}
+
+function getAllVarCodes(indicators) {
+  const set = new Set();
+  for (const ind of indicators) {
+    if (ind.varCode) set.add(ind.varCode);
+    if (ind.denomVar) set.add(ind.denomVar);
+    if (ind.numerators) ind.numerators.forEach(n => set.add(n));
+  }
+  return Array.from(set);
+}
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+  return chunks;
+}
+
+async function fetchCensusData(opts) {
+  const { year, geoType, stateFips, countyFips, varCodes, apiKey } = opts;
+  const chunks = chunkArray(varCodes, 45);
+  const merged = {};
+  let nameOut = null;
+
+  for (const chunk of chunks) {
+    const vars = ['NAME'].concat(chunk).join(',');
+    let url;
+    if (geoType === 'state') {
+      url = 'https://api.census.gov/data/' + year + '/acs/acs5?get=' + vars + '&for=state:' + stateFips;
+    } else {
+      url = 'https://api.census.gov/data/' + year + '/acs/acs5?get=' + vars + '&for=county:' + countyFips + '&in=state:' + stateFips;
+    }
+    if (apiKey) url += '&key=' + encodeURIComponent(apiKey);
+
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (!Array.isArray(data) || data.length < 2) throw new Error('Empty response');
+          const headers = data[0];
+          const row = data[1];
+          for (let i = 0; i < headers.length; i++) {
+            if (headers[i] === 'NAME') { if (!nameOut) nameOut = row[i]; }
+            else if (chunk.indexOf(headers[i]) !== -1) merged[headers[i]] = row[i];
+          }
+          lastErr = null;
+          break;
+        }
+        if (res.status === 429 || res.status >= 500) {
+          lastErr = 'HTTP ' + res.status;
+          if (attempt < 3) { await sleep(400 * attempt); continue; }
+        } else {
+          const body = await res.text();
+          throw new Error('HTTP ' + res.status + ': ' + body.slice(0, 200));
+        }
+      } catch (ex) {
+        lastErr = ex.message || 'Network error';
+        if (attempt < 3) { await sleep(400 * attempt); continue; }
+      }
+    }
+    if (lastErr) throw new Error(lastErr);
+    await sleep(80);
+  }
+  return { name: nameOut, values: merged };
+}
+
+function toCSV(rows) {
+  return rows.map(function(row) {
+    return row.map(function(cell) {
+      const s = String(cell == null ? '' : cell);
+      if (s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    }).join(',');
+  }).join('\n');
+}
+
+function downloadCSV(filename, content) {
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function computeDelta(v1, v2, format) {
+  if (v1 === null || v2 === null || v1 === undefined || v2 === undefined) return null;
+  const isPct = format === 'pct_of' || format === 'pct_computed';
+  if (isPct) return { type: 'pp', value: v2 - v1 };
+  if (v1 === 0) return null;
+  return { type: 'pct', value: ((v2 - v1) / v1) * 100 };
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+function CensusCompare() {
+  const [censusKey, setCensusKey] = useState('');
+  const [showKeyPanel, setShowKeyPanel] = useState(false);
+
+  const [mode, setMode] = useState(null);
+  const [geographies, setGeographies] = useState([]);
+  const [yearA, setYearA] = useState(null);
+  const [yearB, setYearB] = useState(null);
+  const [universe, setUniverse] = useState(null);
+  const [selectedIndicators, setSelectedIndicators] = useState([]);
+
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
+  const [error, setError] = useState(null);
+
+  const [manuallyExpanded, setManuallyExpanded] = useState(function() { return new Set(); });
+  function toggleExpand(step) {
+    setManuallyExpanded(function(prev) {
+      const next = new Set(prev);
+      if (next.has(step)) next.delete(step); else next.add(step);
+      return next;
+    });
+  }
+  function clearManualExpand(step) {
+    setManuallyExpanded(function(prev) {
+      if (!prev.has(step)) return prev;
+      const next = new Set(prev);
+      next.delete(step);
+      return next;
+    });
+  }
+
+  const step2Ref = useRef(null);
+  const step3Ref = useRef(null);
+  const step4Ref = useRef(null);
+  const resultsRef = useRef(null);
+
+  function animatedScrollTo(targetY, duration) {
+    if (duration === undefined) duration = 900;
+    const startY = window.scrollY;
+    const distance = targetY - startY;
+    if (Math.abs(distance) < 4) return;
+    const startTime = performance.now();
+    const ease = function(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+    function step(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      window.scrollTo(0, startY + distance * ease(t));
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function scrollToRef(ref) {
+    if (!ref || !ref.current) return;
+    setTimeout(function() {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const targetY = window.scrollY + rect.top - 80;
+      animatedScrollTo(targetY, 1100);
+    }, 250);
+  }
+
+  useEffect(function() {
+    setGeographies([]); setYearA(null); setYearB(null);
+    setUniverse(null); setSelectedIndicators([]); setResults(null); setError(null);
+    if (mode) { clearManualExpand(1); scrollToRef(step2Ref); }
+  }, [mode]);
+
+  const currentMode = mode ? COMPARISON_MODES[mode] : null;
+
+  const step2Complete = useMemo(function() {
+    if (!mode) return false;
+    const m = COMPARISON_MODES[mode];
+    const minGeos = m.multiGeo ? 2 : 1;
+    if (geographies.length < minGeos) return false;
+    if (m.multiYear) {
+      if (!yearA || !yearB || yearA === yearB) return false;
+    } else {
+      if (!yearA) return false;
+    }
+    return true;
+  }, [mode, geographies, yearA, yearB]);
+
+  const lastStep2Complete = useRef(false);
+  useEffect(function() {
+    if (step2Complete && !lastStep2Complete.current) {
+      clearManualExpand(2);
+      scrollToRef(step3Ref);
+    }
+    lastStep2Complete.current = step2Complete;
+  }, [step2Complete]);
+
+  useEffect(function() {
+    if (universe) {
+      setSelectedIndicators([]);
+      clearManualExpand(3);
+      scrollToRef(step4Ref);
+    }
+  }, [universe]);
+
+  const canRun = step2Complete && !!universe && selectedIndicators.length > 0;
+
+  function addGeography(geo) {
+    if (geographies.length >= MAX_GEOGRAPHIES) return;
+    const usedIdx = new Set(geographies.map(function(g) { return g.colorIdx; }));
+    let colorIdx = 0;
+    for (let i = 0; i < GEO_COLORS.length; i++) {
+      if (!usedIdx.has(i)) { colorIdx = i; break; }
+    }
+    setGeographies(geographies.concat([Object.assign({}, geo, { colorIdx: colorIdx })]));
+  }
+
+  function removeGeography(idx) {
+    setGeographies(geographies.filter(function(_, i) { return i !== idx; }));
+  }
+
+  function resetAll() {
+    setMode(null); setGeographies([]); setYearA(null); setYearB(null);
+    setUniverse(null); setSelectedIndicators([]); setResults(null); setError(null);
+  }
+
+  function resetFromStep(step) {
+    if (step <= 1) setMode(null);
+    if (step <= 2) { setGeographies([]); setYearA(null); setYearB(null); }
+    if (step <= 3) { setUniverse(null); setSelectedIndicators([]); }
+    setResults(null); setError(null);
+  }
+
+  async function runComparison() {
+    if (!canRun) return;
+    setLoading(true); setError(null); setResults(null);
+
+    try {
+      const indicators = INDICATORS[universe].filter(function(i) { return selectedIndicators.indexOf(i.id) !== -1; });
+      const varCodes = getAllVarCodes(indicators);
+
+      const queries = [];
+      if (mode === 'single_over_time') {
+        const g = geographies[0];
+        queries.push({ geo: g, year: yearA, periodKey: 'a' });
+        queries.push({ geo: g, year: yearB, periodKey: 'b' });
+      } else if (mode === 'multi_same_year') {
+        geographies.forEach(function(g) {
+          queries.push({ geo: g, year: yearA, periodKey: 'a' });
+        });
+      } else {
+        geographies.forEach(function(g) {
+          queries.push({ geo: g, year: yearA, periodKey: 'a' });
+          queries.push({ geo: g, year: yearB, periodKey: 'b' });
+        });
+      }
+
+      const dataByKey = {};
+      for (let i = 0; i < queries.length; i++) {
+        const q = queries[i];
+        setLoadingMsg('Fetching ' + (i + 1) + ' of ' + queries.length + ': ' + q.geo.name + ' · ' + q.year + '…');
+        const data = await fetchCensusData({
+          year: q.year, geoType: q.geo.type,
+          stateFips: q.geo.stateFips, countyFips: q.geo.countyFips,
+          varCodes: varCodes, apiKey: censusKey,
+        });
+        const geoIdx = geographies.indexOf(q.geo);
+        dataByKey[geoIdx + '-' + q.periodKey] = data.values;
+      }
+
+      const indicatorRows = indicators.map(function(ind) {
+        const cells = {};
+        geographies.forEach(function(g, gIdx) {
+          const valA = dataByKey[gIdx + '-a'] ? computeIndicator(ind, dataByKey[gIdx + '-a']) : null;
+          const valB = dataByKey[gIdx + '-b'] ? computeIndicator(ind, dataByKey[gIdx + '-b']) : null;
+          cells[gIdx + '-a'] = valA;
+          if (mode === 'single_over_time' || mode === 'multi_over_time') {
+            cells[gIdx + '-b'] = valB;
+          }
+        });
+        return { indicator: ind, cells: cells };
+      });
+
+      setResults({
+        mode: mode, geographies: geographies,
+        yearA: yearA, yearB: yearB,
+        indicatorRows: indicatorRows,
+      });
+
+      setTimeout(function() { scrollToRef(resultsRef); }, 100);
+    } catch (ex) {
+      setError(ex.message || 'Failed to fetch data.');
+    } finally {
+      setLoading(false); setLoadingMsg('');
+    }
+  }
+
+  const canAddMoreGeos = currentMode && (currentMode.multiGeo
+    ? geographies.length < MAX_GEOGRAPHIES
+    : geographies.length < 1);
+
+  return e('div', { className: 'min-h-screen bg-stone-50 text-stone-900' },
+    // Header
+    renderHeader({
+      censusKey, setCensusKey, showKeyPanel, setShowKeyPanel,
+      hasSelections: !!(mode || geographies.length > 0 || universe),
+      hasData: !!(results || selectedIndicators.length > 0),
+      resetAll,
+    }),
+    // Info banner
+    !censusKey ? renderInfoBanner(setShowKeyPanel) : null,
+    // Main
+    e('main', { className: 'max-w-6xl mx-auto px-8 pt-6 pb-8 grid grid-cols-12 gap-8' },
+      e('div', { className: 'col-span-12 lg:col-span-7 space-y-10' },
+        // Step 1
+        renderStep1({ mode, setMode, manuallyExpanded, toggleExpand, resetFromStep }),
+        // Step 2
+        mode ? renderStep2({
+          step2Ref, currentMode, geographies, addGeography, removeGeography,
+          yearA, setYearA, yearB, setYearB,
+          manuallyExpanded, toggleExpand, step2Complete, resetFromStep,
+          canAddMoreGeos,
+        }) : null,
+        // Step 3
+        step2Complete ? renderStep3({
+          step3Ref, universe, setUniverse,
+          manuallyExpanded, toggleExpand, resetFromStep,
+        }) : null,
+        // Step 4
+        universe ? renderStep4({
+          step4Ref, universe, selectedIndicators, setSelectedIndicators, resetFromStep,
+        }) : null,
+        // Run button
+        selectedIndicators.length > 0 ? renderRunButton({ canRun, loading, loadingMsg, runComparison }) : null
+      ),
+      // Summary sidebar
+      renderSummarySidebar({ mode, currentMode, geographies, yearA, yearB, universe, selectedIndicators }),
+      // Results
+      results || error ? renderResults({ resultsRef, results, error, mode }) : null
+    ),
+    // Footer
+    e('footer', { className: 'max-w-6xl mx-auto px-8 py-12 border-t hairline mt-16' },
+      e('div', { className: 'flex items-baseline justify-between text-xs text-stone-500 flex-wrap gap-3' },
+        e('div', null, 'Data from ', e('span', { className: 'mono' }, 'api.census.gov'), ' · ACS 5-Year Estimates'),
+        e('div', { className: 'mono uppercase tracking-widest' }, 'Up to ' + MAX_GEOGRAPHIES + ' geographies')
+      )
+    )
+  );
+}
+
+// ============================================================================
+// RENDER HELPERS — keep the main component readable
+// ============================================================================
+
+function renderHeader(props) {
+  return e('header', { className: 'border-b hairline-strong bg-stone-50 sticky top-0 z-10' },
+    e('div', { className: 'max-w-6xl mx-auto px-8 py-5 flex items-baseline justify-between' },
+      e('div', { className: 'flex items-baseline gap-4' },
+        e('h1', { className: 'serif text-2xl font-medium tracking-tight' }, 'Census Compare'),
+        e('span', { className: 'mono text-xs text-stone-500 uppercase tracking-widest hidden md:inline' }, 'Demographics side-by-side')
+      ),
+      e('div', { className: 'flex items-center gap-3' },
+        props.hasSelections ? e('button', {
+          onClick: function() {
+            if (props.hasData && !window.confirm('Clear all selections and start over?')) return;
+            props.resetAll();
+          },
+          className: 'inline-flex items-center gap-1.5 px-2.5 py-1 border border-red-200 hover:border-red-300 rounded-full mono text-[10px] uppercase tracking-widest text-red-600 hover:text-red-800 hover:bg-red-50 lift',
+        }, Icon('rotate', { size: 12, strokeWidth: 2.25 }), 'Start over') : null,
+        e('button', {
+          onClick: function() { props.setShowKeyPanel(function(v) { return !v; }); },
+          className: 'inline-flex items-center gap-1.5 px-2.5 py-1 border hairline rounded-full mono text-[10px] uppercase tracking-widest text-stone-600 hover:bg-white lift',
+          title: 'Optional Census API key',
+        },
+          Icon('key', { size: 12, strokeWidth: 2.25 }),
+          'API key',
+          e('span', { className: 'inline-block w-1.5 h-1.5 rounded-full ' + (props.censusKey ? 'bg-emerald-600' : 'bg-stone-300') })
+        )
+      )
+    ),
+    props.showKeyPanel ? e('div', { className: 'border-t hairline bg-white fadein' },
+      e('div', { className: 'max-w-6xl mx-auto px-8 py-5' },
+        e('div', null,
+          e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1' }, 'Census API key (optional)'),
+          e('div', { className: 'text-[11px] text-stone-600 leading-relaxed mb-2' },
+            'Free — raises Census API rate limits. Get one at ',
+            e('a', { href: 'https://api.census.gov/data/key_signup.html', target: '_blank', rel: 'noopener noreferrer', className: 'underline hover:text-stone-900' }, 'api.census.gov/data/key_signup.html'),
+            '. Without a key, queries are limited to 500/day per IP.'
+          ),
+          e('div', { className: 'flex items-center gap-2 flex-wrap' },
+            e('input', {
+              type: 'text', value: props.censusKey,
+              onChange: function(ev) { props.setCensusKey(ev.target.value.trim()); },
+              placeholder: 'Paste your 40-character key here',
+              className: 'flex-1 min-w-0 px-3 py-2 border hairline bg-white rounded-sm mono text-[11px] focus:outline-none focus:hairline-strong',
+              style: { maxWidth: '480px' },
+            }),
+            props.censusKey ? e('button', {
+              onClick: function() { props.setCensusKey(''); },
+              className: 'text-[11px] text-stone-500 hover:text-red-700 underline underline-offset-2',
+            }, 'Remove') : null,
+            e('button', {
+              onClick: function() { props.setShowKeyPanel(false); },
+              className: 'text-[11px] text-stone-500 hover:text-stone-900 underline underline-offset-2',
+            }, 'Close')
+          )
+        )
+      )
+    ) : null
+  );
+}
+
+function renderInfoBanner(setShowKeyPanel) {
+  return e('div', { className: 'max-w-6xl mx-auto px-8 pt-6' },
+    e('div', { className: 'border border-sky-300 bg-sky-50 rounded-sm p-3' },
+      e('div', { className: 'flex items-start gap-2' },
+        e('span', { className: 'text-sky-700 mt-0.5 flex-shrink-0' }, Icon('info', { size: 16 })),
+        e('div', { className: 'flex-1 min-w-0 text-xs text-sky-900 leading-relaxed' },
+          e('span', { className: 'font-medium' }, 'No Census API key set.'),
+          ' Queries will work but may be rate-limited after ~500 requests/day. ',
+          e('button', {
+            onClick: function() { setShowKeyPanel(true); },
+            className: 'underline underline-offset-2 hover:text-sky-950 font-medium',
+          }, 'Add a free key'),
+          ' to raise the limit.'
+        )
+      )
+    )
+  );
+}
+
+function renderSectionHeader(number, title, opts) {
+  opts = opts || {};
+  const parts = [e('div', { key: 'n', className: 'mono text-[10px] uppercase tracking-widest text-stone-400' }, number)];
+  if (opts.collapsed && opts.onExpand) {
+    parts.push(e('button', {
+      key: 't',
+      onClick: opts.onExpand,
+      className: 'serif text-xl tracking-tight text-stone-700 hover:text-stone-900 inline-flex items-baseline gap-2 group',
+    }, title, Icon('chevronRight', { size: 14, strokeWidth: 1.75, className: 'self-center text-stone-400 group-hover:text-stone-700' })));
+  } else {
+    parts.push(e('h2', { key: 't', className: 'serif text-xl tracking-tight' }, title));
+  }
+  parts.push(e('div', { key: 's', className: 'flex-1 h-px bg-stone-200 ml-3' }));
+  if (opts.canReset && opts.onReset) {
+    parts.push(e('button', {
+      key: 'r',
+      onClick: opts.onReset,
+      className: 'inline-flex items-center gap-1 mono text-[10px] uppercase tracking-widest text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded-sm border border-red-200 hover:border-red-300 lift',
+    }, Icon('rotate', { size: 12, strokeWidth: 2.25 }), 'reset'));
+  }
+  return e('div', { className: 'flex items-baseline gap-3 mb-5' }, ...parts);
+}
+
+function renderStep1(props) {
+  const isCollapsed = !!props.mode && !props.manuallyExpanded.has(1);
+  return e('section', { className: 'pop-in' },
+    renderSectionHeader('01', 'Choose a comparison', {
+      canReset: !!props.mode,
+      onReset: function() { props.resetFromStep(1); },
+      collapsed: isCollapsed,
+      onExpand: function() { props.toggleExpand(1); },
+    }),
+    !isCollapsed ? e('div', { className: 'fadein' },
+      e('div', { className: 'text-xs text-stone-600 mb-4 leading-relaxed' }, 'Pick the kind of comparison that fits your question.'),
+      e('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-3' },
+        Object.keys(COMPARISON_MODES).map(function(key) {
+          const m = COMPARISON_MODES[key];
+          const active = props.mode === key;
+          return e('button', {
+            key: key,
+            onClick: function() { props.setMode(key); },
+            className: 'text-left p-4 border lift rounded-sm ' + (active ? 'hairline-strong bg-white shadow-sm' : 'hairline bg-white/60 hover:bg-white'),
+          },
+            e('div', { className: 'flex items-start justify-between mb-2' },
+              e('span', { className: 'text-stone-700' }, Icon(m.icon, { size: 16 })),
+              active ? e('span', { className: 'text-stone-900' }, Icon('check', { size: 16 })) : null
+            ),
+            e('div', { className: 'serif text-base leading-tight mb-2' }, m.label),
+            e('div', { className: 'text-[11px] text-stone-600 leading-relaxed' }, m.description)
+          );
+        })
+      )
+    ) : null
+  );
+}
+
+function renderStep2(props) {
+  const isCollapsed = props.step2Complete && !props.manuallyExpanded.has(2);
+  const existingKeys = new Set(props.geographies.map(function(g) {
+    return g.type + ':' + g.stateFips + ':' + (g.countyFips || '');
+  }));
+  return e('section', { ref: props.step2Ref, className: 'pop-in scroll-mt-20' },
+    renderSectionHeader('02', props.currentMode.multiGeo ? 'Add geographies & years' : 'Choose geography & years', {
+      canReset: props.geographies.length > 0 || !!props.yearA || !!props.yearB,
+      onReset: function() { props.resetFromStep(2); },
+      collapsed: isCollapsed,
+      onExpand: function() { props.toggleExpand(2); },
+    }),
+    !isCollapsed ? e('div', { className: 'fadein' },
+      // Geographies
+      e('div', { className: 'mb-5' },
+        e('div', { className: 'flex items-baseline justify-between mb-3 flex-wrap gap-2' },
+          e('div', { className: 'flex items-baseline gap-2' },
+            e('span', { className: 'text-stone-700' }, Icon('mapPin', { size: 14 })),
+            e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-700' },
+              props.currentMode.multiGeo ? 'Geographies' : 'Geography'),
+            e('span', { className: 'text-[11px] text-stone-500' },
+              props.currentMode.multiGeo
+                ? props.geographies.length + '/' + MAX_GEOGRAPHIES
+                : props.geographies.length + '/1')
+          )
+        ),
+        props.geographies.length > 0 ? e('div', { className: 'flex flex-wrap gap-2 mb-3' },
+          props.geographies.map(function(g, idx) {
+            const color = GEO_COLORS[g.colorIdx];
+            return e('div', {
+              key: idx,
+              className: 'inline-flex items-center gap-2 px-2.5 py-1.5 border rounded-sm text-xs bg-white',
+              style: { borderColor: color.border, borderWidth: 1.5 },
+            },
+              e('span', { className: 'inline-block w-2.5 h-2.5 rounded-sm', style: { background: color.bg } }),
+              e('span', { className: 'text-stone-900 font-medium' }, g.name),
+              e('span', { className: 'mono text-[9px] text-stone-400 uppercase' }, g.type),
+              e('button', {
+                onClick: function() { props.removeGeography(idx); },
+                className: 'text-stone-400 hover:text-red-700 ml-0.5',
+              }, Icon('x', { size: 12 }))
+            );
+          })
+        ) : null,
+        props.canAddMoreGeos ? e(GeographyPicker, {
+          onAdd: props.addGeography,
+          existingKeys: existingKeys,
+        }) : null,
+        !props.canAddMoreGeos && props.geographies.length >= MAX_GEOGRAPHIES
+          ? e('div', { className: 'text-[11px] text-stone-500 italic' },
+              'Maximum of ' + MAX_GEOGRAPHIES + ' geographies. Remove one to add another.')
+          : null
+      ),
+      // Years
+      e('div', { className: 'pt-4 border-t hairline' },
+        e('div', { className: 'flex items-baseline gap-2 mb-3' },
+          e('span', { className: 'text-stone-700' }, Icon('calendar', { size: 14 })),
+          e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-700' },
+            props.currentMode.multiYear ? 'Years' : 'Year')
+        ),
+        e('div', { className: 'text-[11px] text-stone-500 mb-3 leading-relaxed' },
+          'ACS 5-Year Estimates.',
+          props.currentMode.multiYear ? ' Pick two different years to compare across time.' : ''
+        ),
+        !props.currentMode.multiYear
+          ? e(YearPicker, { year: props.yearA, setYear: props.setYearA })
+          : e('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-4' },
+              e('div', null,
+                e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1.5' }, 'Earlier year'),
+                e(YearPicker, { year: props.yearA, setYear: props.setYearA, exclude: props.yearB })
+              ),
+              e('div', null,
+                e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1.5' }, 'Later year'),
+                e(YearPicker, { year: props.yearB, setYear: props.setYearB, exclude: props.yearA })
+              )
+            )
+      )
+    ) : null
+  );
+}
+
+function renderStep3(props) {
+  const isCollapsed = !!props.universe && !props.manuallyExpanded.has(3);
+  return e('section', { ref: props.step3Ref, className: 'pop-in scroll-mt-20' },
+    renderSectionHeader('03', 'Choose a universe', {
+      canReset: !!props.universe,
+      onReset: function() { props.resetFromStep(3); },
+      collapsed: isCollapsed,
+      onExpand: function() { props.toggleExpand(3); },
+    }),
+    !isCollapsed ? e('div', { className: 'fadein' },
+      e('div', { className: 'text-xs text-stone-600 mb-4 leading-relaxed' },
+        'Pick the ', e('span', { className: 'font-medium text-stone-900' }, 'universe'),
+        ' your indicators describe. Each universe has its own denominator.'),
+      e('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-3' },
+        Object.keys(UNIVERSES).map(function(key) {
+          const u = UNIVERSES[key];
+          const active = props.universe === key;
+          return e('button', {
+            key: key,
+            onClick: function() { props.setUniverse(key); },
+            className: 'text-left p-5 border lift rounded-sm group ' + (active ? 'hairline-strong bg-white shadow-sm' : 'hairline bg-white/60 hover:bg-white'),
+          },
+            e('div', { className: 'flex items-start gap-3 mb-2' },
+              e('span', { className: 'text-stone-700 mt-0.5 flex-shrink-0' }, Icon(u.icon, { size: 20 })),
+              e('div', { className: 'flex-1' },
+                e('div', { className: 'serif text-lg leading-tight' }, u.label),
+                e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mt-0.5' },
+                  INDICATORS[key].length + ' indicators')
+              ),
+              active ? e('span', { className: 'text-stone-900 flex-shrink-0' }, Icon('check', { size: 16 })) : null
+            ),
+            e('div', { className: 'text-xs text-stone-600 leading-relaxed mb-2' }, u.description),
+            e('div', { className: 'text-[11px] text-stone-500 border-t hairline pt-2 mt-2' },
+              e('span', { className: 'font-medium text-stone-700' }, 'Denominator:'), ' ', u.denominator)
+          );
+        })
+      )
+    ) : null
+  );
+}
+
+function renderStep4(props) {
+  const universe = props.universe;
+  const indicators = INDICATORS[universe];
+  return e('section', { ref: props.step4Ref, className: 'pop-in scroll-mt-20' },
+    renderSectionHeader('04', 'Choose indicators', {
+      canReset: props.selectedIndicators.length > 0,
+      onReset: function() { props.resetFromStep(4); },
+    }),
+    e('div', { className: 'flex items-center justify-between mb-3 flex-wrap gap-2' },
+      e('div', { className: 'text-xs text-stone-600' },
+        indicators.length + ' curated indicators for ',
+        e('span', { className: 'font-medium text-stone-900' }, UNIVERSES[universe].label), '.'),
+      e('div', { className: 'flex items-center gap-3' },
+        e('button', {
+          onClick: function() { props.setSelectedIndicators(indicators.map(function(i) { return i.id; })); },
+          className: 'text-[11px] text-stone-600 hover:text-stone-900 underline underline-offset-2',
+        }, 'Select all'),
+        props.selectedIndicators.length > 0 ? e('button', {
+          onClick: function() { props.setSelectedIndicators([]); },
+          className: 'text-[11px] text-stone-500 hover:text-red-700 underline underline-offset-2',
+        }, 'Clear') : null
+      )
+    ),
+    e('div', { className: 'space-y-1' },
+      indicators.map(function(ind) {
+        const checked = props.selectedIndicators.indexOf(ind.id) !== -1;
+        return e('label', {
+          key: ind.id,
+          className: 'flex items-center gap-3 px-3 py-2 border rounded-sm cursor-pointer lift ' +
+            (checked ? 'hairline-strong bg-white' : 'hairline bg-white/60 hover:bg-white'),
+        },
+          e('div', {
+            className: 'w-4 h-4 border flex items-center justify-center flex-shrink-0 ' +
+              (checked ? 'bg-stone-900 border-stone-900' : 'border-stone-400'),
+          },
+            checked ? e('span', { className: 'text-stone-50' }, Icon('check', { size: 12 })) : null
+          ),
+          e('input', {
+            type: 'checkbox', checked: checked,
+            onChange: function() {
+              props.setSelectedIndicators(function(prev) {
+                return checked ? prev.filter(function(x) { return x !== ind.id; }) : prev.concat([ind.id]);
+              });
+            },
+            className: 'hidden',
+          }),
+          e('div', { className: 'flex-1 text-[13px] text-stone-900' }, ind.label),
+          e('div', { className: 'mono text-[9px] text-stone-400 flex-shrink-0' },
+            ind.format === 'count' ? 'count' :
+            ind.format === 'dollars' ? '$' :
+            ind.format === 'years' ? 'years' :
+            ind.format === 'minutes_computed' ? 'min' : '%')
+        );
+      })
+    )
+  );
+}
+
+function renderRunButton(props) {
+  return e('section', { className: 'fadein pt-4 border-t hairline' },
+    e('button', {
+      onClick: props.runComparison,
+      disabled: !props.canRun || props.loading,
+      className: 'w-full md:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 bg-stone-900 text-stone-50 rounded-sm hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed lift',
+    },
+      props.loading
+        ? e('span', { className: 'spinner-spin inline-flex' }, Icon('loader', { size: 16 }))
+        : Icon('eye', { size: 16 }),
+      e('span', { className: 'text-sm' }, props.loading ? (props.loadingMsg || 'Running…') : 'Run comparison'),
+      !props.loading ? Icon('arrowRight', { size: 16 }) : null
+    )
+  );
+}
+
+function renderSummarySidebar(props) {
+  const parts = [
+    e('div', { key: 'title', className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-3' }, 'Comparison Summary'),
+  ];
+  if (!props.mode) {
+    parts.push(e('div', { key: 'empty', className: 'serif text-stone-400 text-lg italic leading-snug' },
+      'Begin by choosing a comparison on the left.'));
+  } else {
+    parts.push(e('div', { key: 'body', className: 'space-y-3 text-sm' },
+      // Mode
+      e('div', { key: 'mode' },
+        e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500' }, 'Mode'),
+        e('div', { className: 'text-sm text-stone-900' }, COMPARISON_MODES[props.mode].label)
+      ),
+      // Geographies
+      props.geographies.length > 0 ? e('div', { key: 'geos', className: 'pt-2 border-t hairline' },
+        e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-2' },
+          props.geographies.length + ' ' + (props.currentMode.multiGeo ? 'geographies' : 'geography')),
+        e('div', { className: 'space-y-1' },
+          props.geographies.map(function(g, i) {
+            const color = GEO_COLORS[g.colorIdx];
+            return e('div', { key: i, className: 'flex items-baseline gap-2' },
+              e('span', { className: 'inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0 mt-0.5', style: { background: color.bg } }),
+              e('span', { className: 'text-[13px] text-stone-900 truncate' }, g.name)
+            );
+          })
+        )
+      ) : null,
+      // Years
+      (props.yearA || props.yearB) ? e('div', { key: 'years', className: 'pt-2 border-t hairline' },
+        e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1' },
+          props.currentMode.multiYear ? 'Years' : 'Year'),
+        e('div', { className: 'mono text-sm text-stone-900' },
+          props.currentMode.multiYear
+            ? (props.yearA && props.yearB
+                ? Math.min(props.yearA, props.yearB) + ' → ' + Math.max(props.yearA, props.yearB)
+                : (props.yearA ? props.yearA + ' · ?' : '? · ' + props.yearB))
+            : (props.yearA || '—'))
+      ) : null,
+      // Universe
+      props.universe ? e('div', { key: 'uni', className: 'pt-2 border-t hairline' },
+        e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1' }, 'Universe'),
+        e('div', { className: 'text-sm text-stone-900' }, UNIVERSES[props.universe].label)
+      ) : null,
+      // Indicators
+      props.selectedIndicators.length > 0 ? e('div', { key: 'inds', className: 'pt-2 border-t hairline' },
+        e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500 mb-1' },
+          props.selectedIndicators.length + ' indicator' + (props.selectedIndicators.length !== 1 ? 's' : '')),
+        e('div', { className: 'space-y-0.5 max-h-32 overflow-y-auto scrollbar-thin pr-2' },
+          INDICATORS[props.universe].filter(function(i) { return props.selectedIndicators.indexOf(i.id) !== -1; }).map(function(i) {
+            return e('div', { key: i.id, className: 'text-[11px] text-stone-700 truncate' }, i.label);
+          })
+        )
+      ) : null
+    ));
+  }
+  return e('aside', { className: 'col-span-12 lg:col-span-5 space-y-4' },
+    e('div', { className: 'border hairline-strong bg-white p-6 rounded-sm sticky top-20' }, ...parts)
+  );
+}
+
+function renderResults(props) {
+  const children = [
+    e('div', { key: 'head', className: 'border-b hairline px-6 py-4 flex items-center justify-between flex-wrap gap-3' },
+      e('div', { className: 'flex items-baseline gap-3' },
+        e('h2', { className: 'serif text-xl' }, 'Results'),
+        props.results ? e('span', { className: 'mono text-[10px] uppercase tracking-widest text-stone-500' },
+          props.results.indicatorRows.length + ' indicator' + (props.results.indicatorRows.length !== 1 ? 's' : '') +
+          ' · ' + props.results.geographies.length + ' ' + (props.results.geographies.length === 1 ? 'place' : 'places')
+        ) : null
+      ),
+      props.results ? e('button', {
+        onClick: function() { downloadResultsCSV(props.results); },
+        className: 'inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 text-stone-50 rounded-sm hover:bg-stone-800 lift text-xs',
+      }, Icon('download', { size: 14 }), 'Download CSV') : null
+    ),
+  ];
+  if (props.error) {
+    children.push(e('div', { key: 'err', className: 'p-6' },
+      e('div', { className: 'text-xs text-red-700 bg-red-50 border border-red-200 p-3 rounded-sm' },
+        e('div', { className: 'font-medium mb-1 flex items-center gap-1.5' },
+          Icon('alert', { size: 14 }), 'Request failed'),
+        e('div', { className: 'mono text-[10px] leading-relaxed' }, props.error)
+      )
+    ));
+  }
+  if (props.results) {
+    children.push(e('div', { key: 'body', className: 'p-6 space-y-8' },
+      e(SummaryHighlights, { results: props.results }),
+      e(ComparisonTable, { results: props.results }),
+      e(IndicatorVisuals, { results: props.results })
+    ));
+  }
+  return e('div', { ref: props.resultsRef, className: 'col-span-12 fadein scroll-mt-20' },
+    e('div', { className: 'border hairline-strong bg-white rounded-sm' }, ...children)
+  );
+}
+
+// ============================================================================
+// GEOGRAPHY PICKER
+// ============================================================================
+
+function GeographyPicker(props) {
+  const [pickerMode, setPickerMode] = useState('county');
+  const [stateFips, setStateFips] = useState('');
+  const [countyCache, setCountyCache] = useState({});
+  const [status, setStatus] = useState({});
+  const [errState, setErrState] = useState({});
+  const [countySearch, setCountySearch] = useState('');
+
+  useEffect(function() { setCountySearch(''); }, [stateFips]);
+
+  useEffect(function() {
+    if (pickerMode !== 'county' || !stateFips) return;
+    if (countyCache[stateFips] || status[stateFips] === 'loading') return;
+    let cancelled = false;
+    (async function() {
+      setStatus(function(p) { const n = Object.assign({}, p); n[stateFips] = 'loading'; return n; });
+      setErrState(function(p) { const n = Object.assign({}, p); n[stateFips] = null; return n; });
+      const years = [2023, 2022, 2021];
+      for (const y of years) {
+        try {
+          const url = 'https://api.census.gov/data/' + y + '/acs/acs5?get=NAME&for=county:*&in=state:' + stateFips;
+          const res = await fetch(url);
+          if (cancelled) return;
+          if (!res.ok) continue;
+          const rows = await res.json();
+          if (cancelled) return;
+          const headers = rows[0];
+          const nameIdx = headers.indexOf('NAME');
+          const countyIdx = headers.indexOf('county');
+          const counties = rows.slice(1).map(function(r) {
+            return { fips: r[countyIdx], fullName: (r[nameIdx] || '').split(',')[0] };
+          }).filter(function(c) { return c.fips && c.fullName; })
+            .sort(function(a, b) { return a.fullName.localeCompare(b.fullName); });
+          setCountyCache(function(p) { const n = Object.assign({}, p); n[stateFips] = counties; return n; });
+          setStatus(function(p) { const n = Object.assign({}, p); n[stateFips] = 'ready'; return n; });
+          return;
+        } catch (ex) {
+          if (cancelled) return;
+          setErrState(function(p) { const n = Object.assign({}, p); n[stateFips] = ex.message; return n; });
+        }
+      }
+      setStatus(function(p) { const n = Object.assign({}, p); n[stateFips] = 'error'; return n; });
+    })();
+    return function() { cancelled = true; };
+  }, [pickerMode, stateFips]);
+
+  const counties = stateFips ? (countyCache[stateFips] || []) : [];
+  const filteredCounties = useMemo(function() {
+    if (!countySearch.trim()) return counties;
+    const q = countySearch.toLowerCase().trim();
+    return counties.filter(function(c) {
+      return c.fullName.toLowerCase().indexOf(q) !== -1 || c.fips.indexOf(q) !== -1;
+    });
+  }, [counties, countySearch]);
+
+  function pickState() {
+    if (!stateFips) return;
+    const key = 'state:' + stateFips + ':';
+    if (props.existingKeys.has(key)) return;
+    const s = STATES.find(function(x) { return x.fips === stateFips; });
+    if (s) {
+      props.onAdd({ type: 'state', stateFips: stateFips, countyFips: null, name: s.name });
+      setStateFips('');
+    }
+  }
+
+  function pickCounty(c) {
+    const key = 'county:' + stateFips + ':' + c.fips;
+    if (props.existingKeys.has(key)) return;
+    const s = STATES.find(function(x) { return x.fips === stateFips; });
+    props.onAdd({
+      type: 'county', stateFips: stateFips, countyFips: c.fips,
+      name: c.fullName + ', ' + (s ? s.name : ''),
+    });
+    setCountySearch('');
+  }
+
+  const stateName = stateFips ? (STATES.find(function(x) { return x.fips === stateFips; }) || {}).name : '';
+
+  return e('div', { className: 'border hairline bg-white/60 p-3 rounded-sm' },
+    e('div', { className: 'grid grid-cols-2 gap-2 mb-3' },
+      e('button', {
+        onClick: function() { setPickerMode('county'); setStateFips(''); },
+        className: 'text-left p-2.5 border lift rounded-sm ' + (pickerMode === 'county' ? 'hairline-strong bg-white' : 'hairline bg-white/60 hover:bg-white'),
+      },
+        e('div', { className: 'text-sm text-stone-900' }, 'County'),
+        e('div', { className: 'text-[10px] text-stone-500' }, 'More granular')
+      ),
+      e('button', {
+        onClick: function() { setPickerMode('state'); setStateFips(''); },
+        className: 'text-left p-2.5 border lift rounded-sm ' + (pickerMode === 'state' ? 'hairline-strong bg-white' : 'hairline bg-white/60 hover:bg-white'),
+      },
+        e('div', { className: 'text-sm text-stone-900' }, 'State'),
+        e('div', { className: 'text-[10px] text-stone-500' }, 'Statewide totals')
+      )
+    ),
+    e('select', {
+      value: stateFips,
+      onChange: function(ev) { setStateFips(ev.target.value); },
+      className: 'w-full px-3 py-2 border hairline bg-white rounded-sm text-sm focus:outline-none focus:hairline-strong mb-2',
+    },
+      e('option', { value: '' }, '— Select a state —'),
+      STATES.map(function(s) { return e('option', { key: s.fips, value: s.fips }, s.name); })
+    ),
+    pickerMode === 'state' && stateFips ? (function() {
+      const alreadyAdded = props.existingKeys.has('state:' + stateFips + ':');
+      return e('button', {
+        onClick: pickState, disabled: alreadyAdded,
+        className: 'w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-stone-900 text-stone-50 rounded-sm hover:bg-stone-800 text-xs lift disabled:opacity-40 disabled:cursor-not-allowed',
+      },
+        alreadyAdded ? Icon('check', { size: 14 }) : Icon('plus', { size: 14 }),
+        alreadyAdded ? (stateName + ' already added') : ('Add ' + stateName)
+      );
+    })() : null,
+    pickerMode === 'county' && stateFips && status[stateFips] === 'loading'
+      ? e('div', { className: 'text-xs text-stone-500 flex items-center gap-2 py-2' },
+          e('span', { className: 'spinner-spin inline-flex' }, Icon('loader', { size: 14 })),
+          'Loading counties…')
+      : null,
+    pickerMode === 'county' && stateFips && status[stateFips] === 'ready'
+      ? e('div', null,
+          e('div', { className: 'relative mb-2' },
+            e('span', { className: 'absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400' }, Icon('search', { size: 14 })),
+            e('input', {
+              type: 'text', value: countySearch,
+              onChange: function(ev) { setCountySearch(ev.target.value); },
+              placeholder: 'Search ' + counties.length + ' counties…',
+              className: 'w-full pl-8 pr-8 py-1.5 border hairline bg-white rounded-sm text-xs focus:outline-none focus:hairline-strong',
+            }),
+            countySearch ? e('button', {
+              onClick: function() { setCountySearch(''); },
+              className: 'absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-900',
+            }, Icon('x', { size: 14 })) : null
+          ),
+          filteredCounties.length === 0
+            ? e('div', { className: 'text-xs text-stone-500 italic text-center py-3' }, 'No matches.')
+            : e('div', { className: 'border hairline rounded-sm max-h-56 overflow-y-auto scrollbar-thin bg-white' },
+                e('div', { className: 'divide-y hairline' },
+                  filteredCounties.map(function(c) {
+                    const alreadyAdded = props.existingKeys.has('county:' + stateFips + ':' + c.fips);
+                    return e('button', {
+                      key: c.fips,
+                      onClick: function() { pickCounty(c); },
+                      disabled: alreadyAdded,
+                      className: 'w-full flex items-center gap-2 px-3 py-1.5 text-left ' +
+                        (alreadyAdded ? 'bg-stone-100 opacity-60 cursor-not-allowed' : 'hover:bg-stone-100'),
+                    },
+                      e('div', { className: 'flex-1 text-[13px] text-stone-800' }, c.fullName),
+                      alreadyAdded ? Icon('check', { size: 12 }) : Icon('plus', { size: 12 }),
+                      e('div', { className: 'mono text-[10px] text-stone-400' }, stateFips + c.fips)
+                    );
+                  })
+                )
+              )
+        )
+      : null,
+    pickerMode === 'county' && stateFips && status[stateFips] === 'error'
+      ? e('div', { className: 'text-xs text-red-700 bg-red-50 border border-red-200 p-2 rounded-sm' },
+          'Could not load counties: ' + (errState[stateFips] || 'unknown error'))
+      : null
+  );
+}
+
+// ============================================================================
+// YEAR PICKER
+// ============================================================================
+
+function YearPicker(props) {
+  return e('div', { className: 'flex flex-wrap gap-1.5' },
+    YEARS.slice().reverse().map(function(y) {
+      const isExcluded = props.exclude === y;
+      const isSelected = props.year === y;
+      return e('button', {
+        key: y,
+        onClick: function() { if (!isExcluded) props.setYear(y); },
+        disabled: isExcluded,
+        className: 'px-3 py-1.5 mono text-xs border lift rounded-sm ' +
+          (isSelected ? 'hairline-strong bg-stone-900 text-stone-50'
+            : isExcluded ? 'hairline bg-stone-100 text-stone-400 cursor-not-allowed'
+            : 'hairline bg-white hover:bg-stone-100'),
+      }, y);
+    })
+  );
+}
+
+// ============================================================================
+// RESULTS COMPONENTS
+// ============================================================================
+
+function ComparisonTable(props) {
+  const results = props.results;
+  const mode = results.mode;
+  const geographies = results.geographies;
+  const yearA = results.yearA;
+  const yearB = results.yearB;
+  const indicatorRows = results.indicatorRows;
+  const showTime = mode === 'single_over_time' || mode === 'multi_over_time';
+  const earlierYear = showTime ? Math.min(yearA, yearB) : yearA;
+  const laterYear = showTime ? Math.max(yearA, yearB) : yearA;
+  const aIsEarlier = yearA <= (yearB || yearA);
+
+  const headerCells = [
+    e('th', {
+      key: 'indhdr',
+      className: 'text-left py-2.5 px-2 mono text-[9px] uppercase tracking-widest text-stone-500 font-normal border-b-2 hairline-strong whitespace-nowrap sticky-col',
+    }, 'Indicator'),
+  ];
+  geographies.forEach(function(g, idx) {
+    const color = GEO_COLORS[g.colorIdx];
+    if (showTime) {
+      headerCells.push(e('th', {
+        key: 'g' + idx,
+        colSpan: 3,
+        className: 'text-center py-2 px-3 font-normal border-b-2',
+        style: { borderColor: color.border },
+      },
+        e('div', { className: 'flex items-center justify-center gap-1.5' },
+          e('span', { className: 'inline-block w-2 h-2 rounded-sm', style: { background: color.bg } }),
+          e('span', { className: 'text-xs text-stone-900 truncate max-w-[200px]', title: g.name }, g.name)
+        )
+      ));
+    } else {
+      headerCells.push(e('th', {
+        key: 'g' + idx,
+        className: 'text-right py-2.5 px-3 font-normal border-b-2 whitespace-nowrap',
+        style: { borderColor: color.border },
+      },
+        e('div', { className: 'flex items-center justify-end gap-1.5' },
+          e('span', { className: 'inline-block w-2 h-2 rounded-sm', style: { background: color.bg } }),
+          e('span', { className: 'mono text-[9px] uppercase tracking-widest truncate max-w-[160px]', style: { color: color.bg }, title: g.name }, g.name)
+        )
+      ));
+    }
+  });
+
+  const subHeaderCells = showTime ? (function() {
+    const cells = [e('th', { key: 'sh0', className: 'py-1.5 px-2 border-b hairline sticky-col' })];
+    geographies.forEach(function(g, idx) {
+      cells.push(e('th', { key: 'sh-e-' + idx, className: 'text-right py-1.5 px-3 mono text-[9px] uppercase tracking-widest text-stone-500 font-normal border-b hairline' }, earlierYear));
+      cells.push(e('th', { key: 'sh-l-' + idx, className: 'text-right py-1.5 px-3 mono text-[9px] uppercase tracking-widest text-stone-500 font-normal border-b hairline' }, laterYear));
+      cells.push(e('th', { key: 'sh-d-' + idx, className: 'text-right py-1.5 px-3 mono text-[9px] uppercase tracking-widest text-stone-500 font-normal border-b hairline' }, 'Δ'));
+    });
+    return cells;
+  })() : null;
+
+  const bodyRows = indicatorRows.map(function(row) {
+    const cells = [e('td', {
+      key: 'name',
+      className: 'py-2.5 px-2 text-stone-800 border-b hairline whitespace-nowrap sticky-col',
+    }, row.indicator.label)];
+    geographies.forEach(function(g, idx) {
+      if (showTime) {
+        const valEarlier = aIsEarlier ? row.cells[idx + '-a'] : row.cells[idx + '-b'];
+        const valLater = aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a'];
+        const delta = computeDelta(valEarlier, valLater, row.indicator.format);
+        cells.push(e('td', { key: 'e' + idx, className: 'py-2.5 px-3 mono text-right text-stone-900 border-b hairline' }, formatValue(valEarlier, row.indicator.format)));
+        cells.push(e('td', { key: 'l' + idx, className: 'py-2.5 px-3 mono text-right text-stone-900 border-b hairline' }, formatValue(valLater, row.indicator.format)));
+        cells.push(e('td', { key: 'd' + idx, className: 'py-2.5 px-3 text-right border-b hairline' }, e(DeltaCell, { delta: delta })));
+      } else {
+        cells.push(e('td', { key: 'v' + idx, className: 'py-2.5 px-3 mono text-right text-stone-900 border-b hairline' },
+          formatValue(row.cells[idx + '-a'], row.indicator.format)));
+      }
+    });
+    return e('tr', { key: row.indicator.id, className: 'hover:bg-stone-50/60' }, ...cells);
+  });
+
+  return e('div', null,
+    e('div', { className: 'flex items-baseline gap-2 mb-3' },
+      e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-700' }, 'Indicators'),
+      e('div', { className: 'h-px flex-1 bg-stone-200' })
+    ),
+    e('div', { className: 'overflow-x-auto scrollbar-thin -mx-2' },
+      e('table', { className: 'w-full text-xs border-separate', style: { borderSpacing: 0 } },
+        e('thead', null,
+          e('tr', null, ...headerCells),
+          showTime ? e('tr', null, ...subHeaderCells) : null
+        ),
+        e('tbody', null, ...bodyRows)
+      )
+    ),
+    e('div', { className: 'mt-3 text-[10px] text-stone-500 leading-relaxed' },
+      'Change (Δ) reported as ', e('span', { className: 'mono' }, 'pp'),
+      ' (percentage-point change) for percentage-based indicators, and ',
+      e('span', { className: 'mono' }, '%'), ' change for counts and dollar amounts. Dashes indicate missing or suppressed values.'
+    )
+  );
+}
+
+function DeltaCell(props) {
+  const delta = props.delta;
+  if (!delta) return e('span', { className: 'mono text-stone-400' }, '—');
+  const v = delta.value;
+  const isZero = Math.abs(v) < 0.05;
+  const isPositive = v > 0;
+  const color = isZero ? 'text-stone-500' : isPositive ? 'text-emerald-700' : 'text-red-700';
+  const iconName = isZero ? 'minus' : isPositive ? 'trendUp' : 'trendDown';
+  const suffix = delta.type === 'pp' ? ' pp' : '%';
+  const sign = isZero ? '' : (isPositive ? '+' : '');
+  return e('div', { className: 'inline-flex items-center gap-1 ' + color },
+    Icon(iconName, { size: 12, strokeWidth: 2 }),
+    e('span', { className: 'mono text-xs' }, sign + v.toFixed(1) + suffix)
+  );
+}
+
+function IndicatorVisuals(props) {
+  const results = props.results;
+  if (results.indicatorRows.length === 0) return null;
+  const usable = results.indicatorRows.filter(function(r) {
+    for (const k in r.cells) {
+      if (r.cells[k] !== null && r.cells[k] !== undefined) return true;
+    }
+    return false;
+  });
+  if (usable.length === 0) return null;
+
+  return e('div', null,
+    e('div', { className: 'flex items-baseline gap-2 mb-3' },
+      e('span', { className: 'text-stone-700' }, Icon('barChart', { size: 14 })),
+      e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-700' }, 'Visual comparison'),
+      e('div', { className: 'h-px flex-1 bg-stone-200' })
+    ),
+    e('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-4' },
+      usable.map(function(row) {
+        return e(IndicatorBarCard, { key: row.indicator.id, row: row, results: results });
+      })
+    )
+  );
+}
+
+function IndicatorBarCard(props) {
+  const row = props.row;
+  const results = props.results;
+  const mode = results.mode;
+  const geographies = results.geographies;
+  const showTime = mode === 'single_over_time' || mode === 'multi_over_time';
+  const aIsEarlier = results.yearA <= (results.yearB || results.yearA);
+  const earlierYear = showTime ? Math.min(results.yearA, results.yearB) : results.yearA;
+  const laterYear = showTime ? Math.max(results.yearA, results.yearB) : results.yearA;
+
+  const bars = [];
+  geographies.forEach(function(g, idx) {
+    if (showTime) {
+      const valEarlier = aIsEarlier ? row.cells[idx + '-a'] : row.cells[idx + '-b'];
+      const valLater = aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a'];
+      bars.push({ label: g.name, geoColorIdx: g.colorIdx, value: valEarlier, periodLabel: String(earlierYear), isEarlier: true });
+      bars.push({ label: g.name, geoColorIdx: g.colorIdx, value: valLater, periodLabel: String(laterYear), isEarlier: false });
+    } else {
+      bars.push({ label: g.name, geoColorIdx: g.colorIdx, value: row.cells[idx + '-a'], isEarlier: false });
+    }
+  });
+
+  const positives = bars.map(function(b) { return b.value || 0; }).filter(function(v) { return v > 0; });
+  const max = positives.length > 0 ? Math.max.apply(null, positives) : 0;
+
+  return e('div', { className: 'border hairline bg-white p-3 rounded-sm' },
+    e('div', { className: 'text-[11px] text-stone-900 mb-3 font-medium leading-snug' }, row.indicator.label),
+    e('div', { className: 'space-y-1.5' },
+      bars.map(function(b, i) {
+        const color = GEO_COLORS[b.geoColorIdx];
+        const pct = (max > 0 && b.value !== null && b.value > 0) ? (b.value / max) * 100 : 0;
+        return e('div', { key: i },
+          e('div', { className: 'flex items-baseline justify-between mb-0.5 gap-2' },
+            e('div', { className: 'flex items-baseline gap-1.5 min-w-0' },
+              e('span', { className: 'inline-block w-2 h-2 rounded-sm flex-shrink-0', style: { background: color.bg } }),
+              e('div', { className: 'text-[10px] text-stone-700 truncate' },
+                b.label,
+                b.periodLabel ? e('span', { className: 'mono text-stone-400 ml-1.5' }, '· ' + b.periodLabel) : null
+              )
+            ),
+            e('div', { className: 'mono text-[10px] text-stone-900 flex-shrink-0' }, formatValue(b.value, row.indicator.format))
+          ),
+          e('div', { className: 'h-1.5 bg-stone-100 rounded-sm overflow-hidden' },
+            e('div', {
+              className: 'h-full bar-grow',
+              style: { width: pct + '%', background: color.bg, opacity: b.isEarlier ? 0.5 : 1 },
+            })
+          )
+        );
+      })
+    )
+  );
+}
+
+function SummaryHighlights(props) {
+  const highlights = useMemo(function() { return generateHighlights(props.results); }, [props.results]);
+  if (highlights.length === 0) return null;
+  return e('div', null,
+    e('div', { className: 'flex items-baseline gap-2 mb-3' },
+      e('span', { className: 'text-stone-700' }, Icon('sparkles', { size: 14 })),
+      e('div', { className: 'mono text-[10px] uppercase tracking-widest text-stone-700' }, 'Highlights'),
+      e('div', { className: 'h-px flex-1 bg-stone-200' })
+    ),
+    e('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-2' },
+      highlights.map(function(h, i) {
+        return e('div', {
+          key: i,
+          className: 'border hairline bg-stone-50/70 p-3 rounded-sm text-xs text-stone-800 leading-relaxed',
+        }, ...h);
+      })
+    )
+  );
+}
+
+function generateHighlights(results) {
+  const mode = results.mode;
+  const geographies = results.geographies;
+  const indicatorRows = results.indicatorRows;
+  const yearA = results.yearA;
+  const yearB = results.yearB;
+  const showTime = mode === 'single_over_time' || mode === 'multi_over_time';
+  const aIsEarlier = yearA <= (yearB || yearA);
+  const earlier = showTime ? Math.min(yearA, yearB) : yearA;
+  const later = showTime ? Math.max(yearA, yearB) : yearA;
+
+  const out = [];
+
+  // Biggest change over time
+  if (showTime) {
+    let biggest = null;
+    indicatorRows.forEach(function(row) {
+      geographies.forEach(function(g, idx) {
+        const valEarlier = aIsEarlier ? row.cells[idx + '-a'] : row.cells[idx + '-b'];
+        const valLater = aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a'];
+        const delta = computeDelta(valEarlier, valLater, row.indicator.format);
+        if (!delta) return;
+        if (!biggest || Math.abs(delta.value) > Math.abs(biggest.delta.value)) {
+          biggest = { row: row, g: g, delta: delta };
+        }
+      });
+    });
+    if (biggest) {
+      const dir = biggest.delta.value > 0 ? 'increased' : 'decreased';
+      const sign = biggest.delta.value > 0 ? '+' : '';
+      const unit = biggest.delta.type === 'pp' ? ' pp' : '%';
+      out.push([
+        e('span', { key: 'lbl', className: 'font-medium' }, 'Biggest change: '),
+        e('span', { key: 'ind', className: 'font-medium' }, biggest.row.indicator.label),
+        ' in ' + biggest.g.name + ' ' + dir + ' by ',
+        e('span', { key: 'v', className: 'mono' }, sign + biggest.delta.value.toFixed(1) + unit),
+        ' from ' + earlier + ' to ' + later + '.',
+      ]);
+    }
+  }
+
+  // Largest gap across geos
+  if (mode === 'multi_same_year' || mode === 'multi_over_time') {
+    let biggestSpread = null;
+    indicatorRows.forEach(function(row) {
+      const vals = geographies.map(function(g, idx) {
+        const v = showTime ? (aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a']) : row.cells[idx + '-a'];
+        return { g: g, v: v };
+      }).filter(function(x) { return x.v !== null && x.v !== undefined; });
+      if (vals.length < 2) return;
+      const sorted = vals.slice().sort(function(a, b) { return b.v - a.v; });
+      const top = sorted[0], bot = sorted[sorted.length - 1];
+      const spread = top.v - bot.v;
+      if (Math.abs(spread) < 0.01) return;
+      const relSpread = Math.abs(spread) / (Math.abs(top.v) || 1);
+      if (!biggestSpread || relSpread > biggestSpread.relSpread) {
+        biggestSpread = { row: row, top: top, bot: bot, spread: spread, relSpread: relSpread };
+      }
+    });
+    if (biggestSpread) {
+      const y = showTime ? later : yearA;
+      out.push([
+        e('span', { key: 'lbl', className: 'font-medium' }, 'Largest gap: '),
+        'In ' + y + ', ',
+        e('span', { key: 'ind', className: 'font-medium' }, biggestSpread.row.indicator.label),
+        ' ranged from ',
+        e('span', { key: 'b', className: 'mono' }, formatValue(biggestSpread.bot.v, biggestSpread.row.indicator.format)),
+        ' in ' + biggestSpread.bot.g.name + ' to ',
+        e('span', { key: 't', className: 'mono' }, formatValue(biggestSpread.top.v, biggestSpread.row.indicator.format)),
+        ' in ' + biggestSpread.top.g.name + '.',
+      ]);
+    }
+  }
+
+  // Diverging trends
+  if (mode === 'multi_over_time') {
+    let divergent = null;
+    indicatorRows.forEach(function(row) {
+      const deltas = geographies.map(function(g, idx) {
+        const valEarlier = aIsEarlier ? row.cells[idx + '-a'] : row.cells[idx + '-b'];
+        const valLater = aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a'];
+        return { g: g, delta: computeDelta(valEarlier, valLater, row.indicator.format) };
+      }).filter(function(x) { return x.delta !== null; });
+      if (deltas.length < 2) return;
+      const hasUp = deltas.some(function(d) { return d.delta.value > 0.5; });
+      const hasDown = deltas.some(function(d) { return d.delta.value < -0.5; });
+      if (hasUp && hasDown) {
+        const vals = deltas.map(function(d) { return d.delta.value; });
+        const spread = Math.max.apply(null, vals) - Math.min.apply(null, vals);
+        if (!divergent || spread > divergent.spread) {
+          divergent = { row: row, spread: spread, deltas: deltas };
+        }
+      }
+    });
+    if (divergent) {
+      const up = divergent.deltas.filter(function(d) { return d.delta.value > 0; }).map(function(d) { return d.g.name; });
+      const down = divergent.deltas.filter(function(d) { return d.delta.value < 0; }).map(function(d) { return d.g.name; });
+      out.push([
+        e('span', { key: 'lbl', className: 'font-medium' }, 'Diverging trends: '),
+        e('span', { key: 'ind', className: 'font-medium' }, divergent.row.indicator.label),
+        ' moved in opposite directions — up in ' + up.join(', ') + ' and down in ' + down.join(', ') + '.',
+      ]);
+    }
+  }
+
+  return out;
+}
+
+function downloadResultsCSV(results) {
+  const mode = results.mode;
+  const geographies = results.geographies;
+  const yearA = results.yearA;
+  const yearB = results.yearB;
+  const indicatorRows = results.indicatorRows;
+  const showTime = mode === 'single_over_time' || mode === 'multi_over_time';
+  const aIsEarlier = yearA <= (yearB || yearA);
+  const earlierYear = showTime ? Math.min(yearA, yearB) : yearA;
+  const laterYear = showTime ? Math.max(yearA, yearB) : yearA;
+
+  const header = ['Indicator'];
+  geographies.forEach(function(g) {
+    if (showTime) {
+      header.push(g.name + ' (' + earlierYear + ')');
+      header.push(g.name + ' (' + laterYear + ')');
+      header.push(g.name + ' (change)');
+    } else {
+      header.push(g.name + ' (' + yearA + ')');
+    }
+  });
+
+  const rows = [header];
+  indicatorRows.forEach(function(row) {
+    const r = [row.indicator.label];
+    geographies.forEach(function(g, idx) {
+      if (showTime) {
+        const valEarlier = aIsEarlier ? row.cells[idx + '-a'] : row.cells[idx + '-b'];
+        const valLater = aIsEarlier ? row.cells[idx + '-b'] : row.cells[idx + '-a'];
+        const delta = computeDelta(valEarlier, valLater, row.indicator.format);
+        r.push(formatValue(valEarlier, row.indicator.format));
+        r.push(formatValue(valLater, row.indicator.format));
+        r.push(delta ? (delta.value.toFixed(1) + (delta.type === 'pp' ? ' pp' : '%')) : '—');
+      } else {
+        r.push(formatValue(row.cells[idx + '-a'], row.indicator.format));
+      }
+    });
+    rows.push(r);
+  });
+
+  downloadCSV('census_compare_' + mode + '_' + Date.now() + '.csv', toCSV(rows));
+}
+
+// ============================================================================
+// MOUNT
+// ============================================================================
+
+try {
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(e(CensusCompare));
+} catch (err) {
+  console.error('Render error:', err);
+  document.getElementById('root').innerHTML =
+    '<div style="max-width:640px; margin:80px auto; padding:24px; border:1px solid #1c1917; font-family:Georgia,serif; background:white;">' +
+      '<h2 style="margin:0 0 12px 0;">Runtime error</h2>' +
+      '<pre style="background:#f5f5f4; padding:12px; font-size:12px; overflow:auto; color:#b91c1c; white-space:pre-wrap;">' +
+        (err && err.stack ? err.stack : String(err)) +
+      '</pre>' +
+    '</div>';
+}
+
+})();
+</script>
+
+</body>
+</html>
